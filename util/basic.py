@@ -1,51 +1,9 @@
-import numpy as np
 from itertools import combinations_with_replacement
 from collections import Counter
-from sympy import symbols, Poly, expand, Add, Mul
-from gurobipy import Model
+from sympy import symbols, Add, Mul
+from typing import List, Any
 
-
-def purify(poly, variables):
-        """
-        Removes all monomials in the polynomial that contain any of the specified variables.
-
-        Args:
-            poly (sympy.Expr): The polynomial expression to be purified.
-            variables (list): A list of sympy.Symbol objects representing the variables whose monomials should be removed.
-
-        Returns:
-            sympy.Expr: The modified polynomial with specified monomials removed.
-        """
-
-        # Filter out terms containing any of the variables
-        filtered_terms = [term for term in poly.as_ordered_terms() if not any(var in term.free_symbols for var in variables)]
-        
-        # Reconstruct the polynomial
-        modified_poly = Add(*filtered_terms)
-        return modified_poly
-
-def get_coeff_vector_unknown(p, variables, monomial_list):
-    """
-    Computes the coefficient vector of a polynomial with respect to a given list of monomials.
-    Args:
-        p (sympy.Expr): The polynomial expression to extract coefficients from.
-        variables (list): A list of variables present in the polynomial.
-        monomial_list (list): A list of monomials to match against the polynomial.
-    Returns:
-        list: A list of coefficients corresponding to the monomials in `monomial_list`.
-              Each coefficient is purified with respect to the given variables.
-    """
-    p = expand(p)
-    coeff_vector = []
-    
-    for monomial in monomial_list:
-        coeff = p.coeff(monomial)
-        coeff_vector.append(purify(coeff, variables)) 
-        
-    return coeff_vector
-
-
-def generate_monomials(variables, degree):
+def generate_monomials(variables: List[Any], degree: int) -> List[Any]:
     """
     Generates a list of monomials for a given list of variables with total degree <= d.
 
@@ -56,7 +14,6 @@ def generate_monomials(variables, degree):
     Returns:
         list: A list of sympy expressions representing the monomials.
     """
-    num_vars = len(variables)
     monomials = []
     
     # Iterate through all possible total degrees k from 0 to d
@@ -79,52 +36,135 @@ def generate_monomials(variables, degree):
             
     return monomials
 
-def get_coeff_vector(p, variables, monomial_list):
+def template_poly(variables, degree):
+    """
+    Creates a template polynomial with symbolic coefficients for given variables and degree.
+
+    Args:
+        variables (list): List of sympy.Symbol objects.
+        degree (int): Maximum total degree of the polynomial.
+
+    Returns:
+        sympy.Expr: The template polynomial expression.
+    """
+
+    monomials = generate_monomials(variables, degree)
+    coeffs = symbols(f'c0:{len(monomials)}')
+
+    poly = Add(*[Mul(coeffs[i], monomials[i]) for i in range(len(monomials))])
+    return poly, coeffs
+
+def get_coeff_vector(p, variables: List[Any], monomial_list: List[Any]) -> List[Any]:
     """
     Obtains the coefficient vector of a polynomial p according to a specific 
     list of monomials.
 
-    Args:
-        p (sympy.Expr): The polynomial expression.
-        variables (list): The list of sympy.Symbol objects (e.g., [x, y, z]).
-        d (int): The maximum total degree of the monomial basis.
-        monomial_list (list): The ordered list of monomials (m_i) forming the basis.
-
-    Returns:
-        list: The coefficient vector (c_i) such that p = sum(c_i * m_i).
+    Example:
+        input: 3*x**2 + 2*x*y + y + 5, [x,y], [1, x, y, x**2, x*y, y**2]
+        output: [5, 0, 1, 3, 2, 0]
     """
-
-    p = expand(p)
+    # Initialize the coefficient vector
     coeff_vector = []
     
+    # Iterate through the monomial list
     for monomial in monomial_list:
+        # Extract the coefficient of the current monomial in the polynomial
         coeff = p.coeff(monomial)
-        # coeff = p.coeff_monomial(monomial)
-        coeff_vector.append(coeff) 
-        
+        constant = coeff.as_independent(*variables, as_Add=True)[0]
+        coeff_vector.append(constant)
+    
+    coeff_vector[0] = p.as_independent(*variables, as_Add=True)[0]
     return coeff_vector
 
-def get_coeff_matrix(g_constraints, variables, basis):
+def get_coeff_matrix(g_constraints: List[Any], variables: List[Any], monomial_list: List[Any]) -> List[List[Any]]:
     """
     Extracts the coefficient matrix A for the LP problem 
     from a list of linear constraints g_i(x) >= 0.
-
-    Args:
-        g_constraints (list): A list of SymPy expressions defining the constraints.
-        variables (list) 
-        basis (list): A list of monomials
-
-    Returns:
-        A (np.ndarray): Matrix where A[i, j] is the coefficient 
-            of the j-th monomial in the i-th constraint g_i.
     """
-    if not g_constraints:
-        return np.array([]), []
-        
+
     A = []
     for g in g_constraints:
         # Each row is the coefficient vector of one constraint g_i(x)
-        row_coeffs = get_coeff_vector(g, variables, basis)
+        row_coeffs = get_coeff_vector(g, variables, monomial_list)
         A.append(row_coeffs)
     
-    return np.array(A)
+    return A
+
+def degree_in_variables(p, variables: List[Any]) -> int:
+    """
+    Computes the total degree of polynomial p with respect to the given variables.
+    """
+    max_degree = 0
+    for monomial in p.as_ordered_terms():
+        total_deg = sum(monomial.as_powers_dict().get(var, 0) for var in variables)
+        if total_deg > max_degree:
+            max_degree = total_deg
+    return max_degree
+
+def homogenization(p, variables: List[Any], h_var: Any) -> Any:
+    """
+    Homogenizes a polynomial p by adding a new variable h_var.
+
+    Args:
+        p: The polynomial to homogenize.
+        variables (list): List of sympy.Symbol objects representing the variables in p.
+        degree (int): The target total degree after homogenization.
+        h_var: The new variable to add for homogenization.
+
+    Returns:
+        The homogenized polynomial.
+    """
+    degree = degree_in_variables(p, variables)
+    monomial_list = generate_monomials(variables, degree)
+    homog_p = 0
+
+    for monomial in monomial_list:
+        coeff = p.coeff(monomial)
+        total_deg = sum(monomial.as_powers_dict().values())
+        h_exponent = degree - total_deg
+        homog_monomial = monomial * (h_var ** h_exponent)
+        homog_p += coeff * homog_monomial
+
+    return homog_p
+
+if __name__ == "__main__":
+    # tests
+    print("\nTest: get_coeff_vector")
+    x, y = symbols('x, y') 
+    variables = [x, y]
+    monomial_list = generate_monomials(variables, degree=2)
+    print(monomial_list)
+    p1 = 3*x**2 + 2*x*y + y + 5
+    print("Polynomial p:", p1)
+    print("monomial_list:", monomial_list)
+    cv = get_coeff_vector(p1, variables, monomial_list)
+    print(cv, "==> Expect: [5, 0, 1, 3, 2, 0]")
+
+    print("\nTest: get_coeff_vector with parameters")
+    x, y = symbols('x, y') 
+    variables = [x, y]
+    a, b = symbols('a, b')
+    monomial_list = generate_monomials(variables, degree=2)
+    print(monomial_list)
+    p2 = a*x**2 + b*x*y + y + 5
+    print("Polynomial p:", p2)
+    print("monomial_list:", monomial_list)
+    cv = get_coeff_vector(p2, variables, monomial_list)
+    print(cv, "==> Expect: [5, 0, 1, a, b, 0]")
+
+    print("\nTest: get_coeff_matrix")
+    cv = get_coeff_matrix([p1,p2], variables, monomial_list)
+    print(cv)
+
+    print("\nTest: homogenization")
+    p1 = x**2 + 2*x*y + 3*y + 4
+    p2 = x**2 + a*x*x*y + b**2*y + 4
+    x0 = symbols('x0')
+
+    homog_p1 = homogenization(p1, variables, h_var=x0)
+    print("Original polynomial p1:", p1)
+    print("Homogenized polynomial homog_p1:", homog_p1)
+
+    homog_p2 = homogenization(p2, variables, h_var=x0)
+    print("Original polynomial p2:", p2)
+    print("Homogenized polynomial homog_p2:", homog_p2)

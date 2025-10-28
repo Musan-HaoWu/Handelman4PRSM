@@ -1,60 +1,41 @@
-from util.basic import generate_monomials, get_coeff_vector, get_coeff_vector_unknown, get_coeff_matrix
+from util.basic import generate_monomials, template_poly, get_coeff_vector, get_coeff_matrix, homogenization
+from util.entailment import Entailment, Constrainst
+
 from util.handelman import check_compatible_farkas, check_compatible, add_handelman_constraints
-from util.entailment import Entailment
 from sympy import symbols, simplify, Add, Mul, expand, Abs
 from gurobipy import Model, GRB, GurobiError
-
-
-
-def template_poly(variables, degree):
-    """
-    Creates a template polynomial with symbolic coefficients for given variables and degree.
-
-    Args:
-        variables (list): List of sympy.Symbol objects.
-        degree (int): Maximum total degree of the polynomial.
-
-    Returns:
-        sympy.Expr: The template polynomial expression.
-    """
-
-    monomials = generate_monomials(variables, degree)
-    coeffs = symbols(f'c0:{len(monomials)}')
-
-    poly = Add(*[Mul(coeffs[i], monomials[i]) for i in range(len(monomials))])
-    return poly, coeffs
-
-
 
 
 def main():
     
     # 1. Define problem
-    x, y = symbols('x, y') 
-    variables = [x, y]
+    x = symbols('x') 
+    variables = [x]
 
-
+    x0 = symbols('x0') 
+    
     # 2. Create templates
-    p, p_coeffs = template_poly(variables, degree=2) 
+    v, v_coeffs = template_poly(variables, degree=1) 
+    expect_v = x/(2*x+1)*v.subs({x: x - 1}) + (x+1)/(2*x+1)*v.subs({x: x + 1})
+    # rational case
+    v = v.subs({x: Abs(x)/(Abs(x)+1)})
 
-    print("Polynomial p:", p)
-    print("Polynomial coefficients:", p_coeffs)
-
-    monomial_list = generate_monomials(variables, degree=2)
-    cv = get_coeff_vector_unknown(p, variables, monomial_list)
-    print(cv)
+    print("Template v:", v) 
+    print("Expect v", expect_v)
 
     # 3. Declare constraints in SymPy
-    # cons = Entailment([x,1-x], p)
-
-    # print(cons.premises)
-    # print(cons.conclusion)
-
-    print(remove_abolutee_values(2*abs(x-1) + 3*abs(x) + 4))
-
-
+    prsm_constraints = Constrainst()
+    prsm_constraints.add_constraint(Entailment([x, -x], -v))
+    prsm_constraints.add_constraint(Entailment([x-1], v-1))
+    prsm_constraints.add_constraint(Entailment([x-1], v-expect_v))
     
+    prsm_constraints.print_constraints()
+    prsm_constraints.rewrite()
+    prsm_constraints.print_constraints()
+
     # 4. Translate the constraints to Gurobi
+
+    D = 4
 
     # model = Model("Handelman")
     # coeff_gurobi_vars = []

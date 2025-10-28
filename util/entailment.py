@@ -77,6 +77,13 @@ class Entailment:
         # Update the entailment's function
         self.f = expr
 
+    def remove_duplicate(self):
+        """
+        Remove duplicate constraints in K
+        """
+        unique_constraints = list(set(self.K))
+        self.K = unique_constraints
+
 class Constrainst:
     def __init__(self):
         self.constraints = []
@@ -103,43 +110,50 @@ class Constrainst:
         for i, constraint in enumerate(self.constraints):
             print(f"Constraint {i+1}: ", constraint.K, ">= 0 ==>", simplify(constraint.f), ">=0")
 
+    def remove_duplicates_all(self):
+        for entailment in self.constraints:
+            entailment.remove_duplicate()
+    
+    def rewrite(self):
+        self.remove_denominators_all()
+        self.remove_absolute_values_all()
+        self.remove_duplicates_all()
 
+if __name__ == "__main__":
+    # tests
+    x, y = symbols('x, y') 
+    variables = [x, y]
+    a = symbols('a')
 
+    constraints = Constrainst()
 
-# tests
-x, y = symbols('x, y') 
-variables = [x, y]
-a = symbols('a')
+    K1 = [x+10, 10-x] 
+    f1 = 2*x
+    entailment1 = Entailment(K1, f1)
+    constraints.add_constraint(entailment1)
 
-constraints = Constrainst()
+    K2 = [x-2, 3-x, y-2, 3-y]
+    f2 = Abs(x - Abs(1-y)) + 1
+    entailment2 = Entailment(K2, f2)
+    constraints.add_constraint(entailment2)
 
-K1 = [x+10, 10-x] 
-f1 = 2*x
-entailment1 = Entailment(K1, f1)
-constraints.add_constraint(entailment1)
+    K3 = [x+10, 10-x]
+    f3 = 2*Abs(3*x-1)/(1+Abs(x))*x/(2*x+1)
+    entailment3 = Entailment(K3, f3)
+    constraints.add_constraint(entailment3)
 
-K2 = [x-2, 3-x, y-2, 3-y]
-f2 = Abs(x - Abs(1-y)) + 1
-entailment2 = Entailment(K2, f2)
-constraints.add_constraint(entailment2)
+    K4 = [x+10, 10-x]
+    f4 = y+1/(1+Abs(a/(1+Abs(x))))
+    entailment4 = Entailment(K4, f4)
+    constraints.add_constraint(entailment4)
 
-K3 = [x+10, 10-x]
-f3 = 2*Abs(3*x-1)/(1+Abs(x))*x/(2*x+1)
-entailment3 = Entailment(K3, f3)
-constraints.add_constraint(entailment3)
+    constraints.print_constraints()
 
-K4 = [x+10, 10-x]
-f4 = y+1/(1+Abs(a/(1+Abs(x))))
-entailment4 = Entailment(K4, f4)
-constraints.add_constraint(entailment4)
+    print("After removing denominators")
+    constraints.remove_denominators_all()
+    constraints.print_constraints()
 
-constraints.print_constraints()
-
-print("After removing denominators")
-constraints.remove_denominators_all()
-constraints.print_constraints()
-
-print("After removing absolute values:")
-constraints.remove_absolute_values_all()
-constraints.print_constraints()
+    print("After removing absolute values:")
+    constraints.remove_absolute_values_all()
+    constraints.print_constraints()
 
