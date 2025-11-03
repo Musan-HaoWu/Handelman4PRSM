@@ -5,7 +5,7 @@ from itertools import combinations_with_replacement
 from collections import Counter
 # from lp import *
 
-def check_compatible(cmatrix):
+def check_empty(cmatrix):
     """
     Solves the LP to check if 1 can be represented as a non-negative linear 
     combination of the constraints whose coefficients are in cmatrix.
@@ -15,14 +15,14 @@ def check_compatible(cmatrix):
     """
     # The target vector b_target = [1, 0, 0, ...]
     # This means: Coeff of '1' must be 1.0, Coeff of 'x', 'y', etc. must be 0.
-    _, n = cmatrix.shape
-    b_target = np.zeros(n)
-    b_target[0] = 1.0 
-
+    
     if cmatrix.size == 0:
         return False
     
     m_constraints, n_monomials = cmatrix.shape
+
+    b_target = np.zeros(n_monomials)
+    b_target[0] = -1.0 
 
     if n_monomials != len(b_target):
         return False
@@ -32,7 +32,7 @@ def check_compatible(cmatrix):
     model.setParam('OutputFlag', 0) 
     # Define the lambda variables (non-negative multipliers)
     lambdas = model.addVars(m_constraints, name="lambda", lb=0.0)
-    # lambda_c = model.addVar(name="lambda0", lb=0.0)
+    lambda_c = model.addVar(name="lambda0", lb=0.0)
     # Dummy objective (feasibility problem)
     model.setObjective(0, GRB.MINIMIZE)
     # Add constraints: cmatrix^T * lambda = b_target
@@ -41,17 +41,19 @@ def check_compatible(cmatrix):
     for j in range(n_monomials):
         # Sum_{i=1}^{m} lambda_i * cmatrix_T[j, i] == b_target[j]
         expr = sum(lambdas[i] * cmatrix_T[j, i] for i in range(m_constraints))
-        # if j==1:
-        #     expr += lambda_c
+        if j==1:
+            expr += lambda_c
         model.addConstr(expr == b_target[j])
     model.optimize()
     if model.status == GRB.OPTIMAL or model.status == GRB.SUBOPTIMAL:
-        multipliers = [lambdas[i].X for i in range(m_constraints)]
-        print(multipliers)
-        return True
+        # multipliers = [lambdas[i].X for i in range(m_constraints)]
+        # print(multipliers)
+        empty = True
+        return empty
     else:
-        print("Incompatible: No solution found.")
-        return False
+        # print("Incompatible: No solution found.")
+        empty = False
+        return empty
 
 
 def get_monoid(g_constraints, d):

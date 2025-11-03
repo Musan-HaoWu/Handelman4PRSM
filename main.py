@@ -19,11 +19,10 @@ def main():
    
     
     # rational case
-    # if True:
-        # v = v.subs({x: x/(Abs(x)+1)})
-    # expect_v = x/(2*x+1)*v.subs({x: x - 1}) + (x+1)/(2*x+1)*v.subs({x: x + 1})
+    if True:
+        v = v.subs({x: x/(Abs(x)+1)})
+    expect_v = x/(2*x+1)*v.subs({x: x - 1}) + (x+1)/(2*x+1)*v.subs({x: x + 1})
     
-    expect_v = v.subs({x: x - 1})
 
     print("Template v:", v) 
     print("Expect v", expect_v)
@@ -35,6 +34,8 @@ def main():
     v_constraints.add_constraint(Entailment(vars, [x-1], v-expect_v))
     # v_constraints.add_constraint(Entailment(vars, [x-1, 2-x, x-3], v)) #redundant
     
+    print(simplify(v - expect_v))
+
     # 4. Rewrite constraints into standard form (x in K => f(x) >= 0)
     v_constraints.print_constraints()
     v_constraints.rewrite()
@@ -46,7 +47,7 @@ def main():
     v_constraints.print_constraints()
 
     # 6. Formulate D-th degree Handelman relaxation
-    D = 2
+    D = 6
     v_constraints.translate_handelman(D)
 
     # 7. Solve LP for v

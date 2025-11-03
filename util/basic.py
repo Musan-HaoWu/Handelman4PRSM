@@ -79,6 +79,7 @@ def homogenization(p, variables: List[Any], h_var: Any) -> Any:
     Returns:
         The homogenized polynomial.
     """
+    p = p.expand()
     degree = degree_in_variables(p, variables)
     # print("degree", degree)
     monomial_list = generate_monomials(variables, degree)

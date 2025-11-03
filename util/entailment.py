@@ -1,7 +1,7 @@
 from sympy import symbols, simplify, Abs
 from itertools import product
 from util.basic import *
-from util.handelman import check_compatible, get_monoid
+from util.handelman import check_empty, get_monoid
 from gurobipy import Model, GRB
 
 
@@ -98,8 +98,7 @@ class Entailment:
         
         monomial_list = generate_monomials(self.vars, degree=1)
         K_cmatrix = get_coeff_matrix(self.K, self.vars, monomial_list)
-        not_empty = check_compatible(K_cmatrix)
-        empty = not not_empty
+        empty = check_empty(K_cmatrix)
         if self.f == 0:
             empty = True
         return empty
@@ -111,13 +110,14 @@ class Entailment:
             g_h = homogenization(g, self.vars, x0)
             new_K.append(g_h)
         
-        f_h = homogenization(self.f, self.vars, x0)
         equality = -1 + x0
         for var in self.vars:
             if var in new_K:
                 equality += var
             if -var in new_K:
                 equality -= var
+        
+        f_h = homogenization(self.f, self.vars, x0)
         
         self.K = new_K + [x0, equality, -equality]
         self.f = f_h
@@ -163,7 +163,10 @@ class Constrainst:
         self.__remove_denominators_all()
         self.__remove_absolute_values_all()
         self.__remove_duplicates_all()
-        # self.__homogenize_all()
+        self.print_constraints()
+        print("homo.")
+        self.__homogenize_all()
+
 
     def remove_empty_K(self):
         new_constraints = []
@@ -175,8 +178,8 @@ class Constrainst:
     def __prepare_gurobi_variables(self):
         v_coeffs_gvars = []
         for i, coeff in enumerate(self.parameters):
-            v_coeffs_gvars.append(self.m.addVar(name=f'vc{i}', lb=-GRB.INFINITY, ub=GRB.INFINITY))
-        
+            # v_coeffs_gvars.append(self.m.addVar(name=f'vc{i}', lb=-GRB.INFINITY, ub=GRB.INFINITY))
+            v_coeffs_gvars.append(self.m.addVar(name=f'vc{i}', vtype=GRB.INTEGER, lb=-GRB.INFINITY, ub=GRB.INFINITY))
         self.m.update() 
         self.gurobi_parameters = v_coeffs_gvars
 
