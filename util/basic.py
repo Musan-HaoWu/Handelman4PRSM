@@ -59,6 +59,7 @@ def degree_in_variables(p, variables: List[Any]) -> int:
     """
     Computes the total degree of polynomial p with respect to the given variables.
     """
+    p = p.expand()
     max_degree = 0
     for monomial in p.as_ordered_terms():
         total_deg = sum(monomial.as_powers_dict().get(var, 0) for var in variables)

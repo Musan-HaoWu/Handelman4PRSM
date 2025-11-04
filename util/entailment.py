@@ -3,13 +3,16 @@ from itertools import product
 from util.basic import *
 from util.handelman import check_empty, get_monoid
 from gurobipy import Model, GRB
-
+from fractions import Fraction
+from time import time
 
 class Entailment:
-    def __init__(self, vars, gs, f):
+    def __init__(self, vars, gs, f, is_bounded=False, is_strict=False):
         self.K = gs
         self.f = f
         self.vars = vars
+        self.is_bounded = is_bounded
+        self.is_strict = is_strict
 
     def remove_absolute_values(self):
         """
@@ -52,8 +55,8 @@ class Entailment:
         negative_case = self.f.subs(abs_term, -inner_expr)
 
         # Create new entailments for each case
-        cases.append(Entailment(self.vars, self.K + [inner_expr], positive_case))
-        cases.append(Entailment(self.vars, self.K + [-inner_expr], negative_case))
+        cases.append(Entailment(self.vars, self.K + [inner_expr], positive_case, self.is_bounded, self.is_strict))
+        cases.append(Entailment(self.vars, self.K + [-inner_expr], negative_case, self.is_bounded, self.is_strict))
 
         # Recursively handle remaining absolute values in each case
         result = []
@@ -103,8 +106,10 @@ class Entailment:
             empty = True
         return empty
 
-
     def homogenize(self, x0):
+        if self.is_bounded:
+            return 
+
         new_K = []
         for g in self.K:
             g_h = homogenization(g, self.vars, x0)
@@ -122,14 +127,13 @@ class Entailment:
         self.K = new_K + [x0, equality, -equality]
         self.f = f_h
         self.vars = self.vars + [x0]
-     
+
 
 class Constrainst:
-    def __init__(self, variables, parameters):
+    def __init__(self, parameters):
         self.constraints = []
-        self.variables = variables # system variables
         self.parameters = parameters # unknown coeffcients in v
-        self.m = Model("V_Constraints")
+        self.m = Model("Constraints")
         self.__prepare_gurobi_variables()
         self.x0 = symbols('x0')  # homogenization variable
 
@@ -160,13 +164,15 @@ class Constrainst:
             entailment.remove_duplicate()
     
     def rewrite(self):
-        self.__remove_denominators_all()
         self.__remove_absolute_values_all()
+        self.__remove_denominators_all()
         self.__remove_duplicates_all()
-        self.print_constraints()
-        print("homo.")
         self.__homogenize_all()
-
+        print("After rewriting:")
+        self.print_constraints()
+        print("After pruning:")
+        self.remove_empty_K()
+        self.print_constraints()
 
     def remove_empty_K(self):
         new_constraints = []
@@ -178,8 +184,8 @@ class Constrainst:
     def __prepare_gurobi_variables(self):
         v_coeffs_gvars = []
         for i, coeff in enumerate(self.parameters):
-            # v_coeffs_gvars.append(self.m.addVar(name=f'vc{i}', lb=-GRB.INFINITY, ub=GRB.INFINITY))
-            v_coeffs_gvars.append(self.m.addVar(name=f'vc{i}', vtype=GRB.INTEGER, lb=-GRB.INFINITY, ub=GRB.INFINITY))
+            v_coeffs_gvars.append(self.m.addVar(name=f'c{i}', lb=-GRB.INFINITY, ub=GRB.INFINITY))
+            # v_coeffs_gvars.append(self.m.addVar(name=f'vc{i}', vtype=GRB.INTEGER, lb=-GRB.INFINITY, ub=GRB.INFINITY))
         self.m.update() 
         self.gurobi_parameters = v_coeffs_gvars
 
@@ -201,39 +207,66 @@ class Constrainst:
         for e, entailment in enumerate(self.constraints):
             K = entailment.K
             f = entailment.f
-            monomial_basis = generate_monomials(self.variables, degree=D)
+            vars = entailment.vars
+            monomial_basis = generate_monomials(vars, degree=D)
             
             # Generate the Handelman monoid basis
             handelman_basis = get_monoid(K, D)
             # Get the coefficient matrix cmatrix for the Handelman basis
-            cmatrix = get_coeff_matrix(handelman_basis, self.variables, monomial_basis)
+            cmatrix = get_coeff_matrix(handelman_basis, vars, monomial_basis)
             # Add constraints: cmatrix^T * lambda = p_coeff_vector
             cmatrix_T = cmatrix.T 
             # Define m_constraints as the number of rows in cmatrix
             monoid_rows = cmatrix.shape[0]
 
             # Get the coefficient vector of p with respect to the monomial basis
-            f_coeffs = get_coeff_vector(f, self.variables, monomial_basis)
+            f_coeffs = get_coeff_vector(f, vars, monomial_basis)
 
             lambdas = self.m.addVars(monoid_rows, name=f"lambda{e}", lb=0.0)
             for j in range(len(monomial_basis)):
                 expr = sum(lambdas[i] * cmatrix_T[j, i] for i in range(monoid_rows))
                 self.m.addConstr(expr == self.sympy2gurobi(f_coeffs[j]))
 
-    def solve_for_v(self):
+    def solve(self):
         self.m.setParam('OutputFlag', 0)
         self.m.setObjective(0, GRB.MINIMIZE)
+        # solver_time = self.m.Runtime
+        # print(f"Gurobi Solver Runtime: {solver_time:.4f} seconds")
+
+        start_time = time()
         self.m.optimize()
+        end_time = time()
+
+        elapsed_wall_clock_time = end_time - start_time
+        gurobi_optimization_time = self.m.Runtime
+
+        print(f"Elapsed wall-clock time: {elapsed_wall_clock_time:.5f} seconds")
+        print(f"Gurobi Optimization Runtime: {gurobi_optimization_time:.5f} seconds")
+ 
         if self.m.status == GRB.OPTIMAL or self.m.status == GRB.SUBOPTIMAL:
-            v_solution = [var.X for var in self.gurobi_parameters]
-            return True, v_solution
+            # solution = [var.X for var in self.gurobi_parameters]
+            solution = [Fraction(var.X).limit_denominator(10**6) for var in self.gurobi_parameters]
+            return True, solution
         else:
             return False, None
         
     def __homogenize_all(self):
-        self.variables = self.variables + [self.x0]
+        # self.vars = self.vars + [self.x0]
         for entailment in self.constraints:
             entailment.homogenize(self.x0)
+
+    def refresh_model(self):
+        self.m.reset()
+        self.__prepare_gurobi_variables()
+
+    def max_degree_f(self):
+        max_deg = 1
+        for entailment in self.constraints:
+            deg = degree_in_variables(entailment.f, entailment.vars)
+            if deg > max_deg:
+                max_deg = deg
+        return max_deg
+
 
 
 
